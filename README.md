@@ -135,3 +135,11 @@ samsung_link.py         — CLI tool
 ## License
 
 MIT
+
+## iPhone development version
+
+A native SwiftUI app is now in [`ios/`](ios/README.md). It provides a photo grid,
+selection, and downloads to Apple Photos over the camera's Wi-Fi connection.
+Open `ios/CameraPocket.xcodeproj` in Xcode to install on an iPhone with iOS 17+.
+This initial version connects by address; real-device DV300F validation is still
+pending. See the iOS README for setup and current limitations.

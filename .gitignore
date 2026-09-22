@@ -6,3 +6,8 @@ __pycache__/
 *.pyc
 .claude
 .fewword
+
+# Xcode local state
+DerivedData/
+xcuserdata/
+*.xcuserstate
