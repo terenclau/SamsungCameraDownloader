@@ -1,0 +1,6 @@
+In Xcode, you add image assets to an Asset Catalog:
+
+1. In the Project Navigator (left sidebar), click on Assets (or Assets.xcassets).
+2. Click the + button at the bottom of the asset list pane (or right-click inside the asset list).
+3. Select Image Set (or drag and drop your image files directly into the assets area).
+4. Drag your image files into the 1x, 2x, or 3x slots for the new image set.

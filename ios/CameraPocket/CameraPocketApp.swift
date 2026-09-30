@@ -23,6 +23,9 @@ final class CameraModel: ObservableObject {
     @Published var error: String?
     private var operation: Task<Void, Never>?
     private let client = CameraClient()
+    private var downloadedKeys = Set(UserDefaults.standard.stringArray(forKey: "downloadedCameraItems") ?? [])
+
+    var days: [String] { Array(Set(photos.compactMap(\.day))).sorted(by: >) }
 
     func connect(address: String, direct: Bool) {
         guard !busy else { return }
@@ -38,6 +41,7 @@ final class CameraModel: ObservableObject {
                 let result = try await client.browse(control: control)
                 try Task.checkCancellation()
                 photos = result
+                saved = Set(result.filter { downloadedKeys.contains($0.savedKey) }.map(\.id))
                 status = result.isEmpty ? "No downloadable photos or MP4 videos found. Check the camera’s selected files and MobileLink mode." : "\(photos.count) items · tap to select"
             } catch {
                 if Task.isCancelled { status = "Connection cancelled." }
@@ -49,6 +53,10 @@ final class CameraModel: ObservableObject {
     func toggle(_ photo: CameraPhoto) {
         guard !busy, !saved.contains(photo.id) else { return }
         if !selected.insert(photo.id).inserted { selected.remove(photo.id) }
+    }
+    func selectDay(_ day: String?) {
+        guard !busy else { return }
+        selected = Set(photos.filter { $0.day == day && !saved.contains($0.id) }.map(\.id))
     }
     func download() {
         guard !busy, !selected.isEmpty else { return }
@@ -95,6 +103,8 @@ final class CameraModel: ObservableObject {
                         // or rewriting EXIF / MP4 metadata.
                         request.addResource(with: photo.isVideo ? .video : .photo, fileURL: importFile, options: options)
                     }
+                    downloadedKeys.insert(photo.savedKey)
+                    UserDefaults.standard.set(Array(downloadedKeys), forKey: "downloadedCameraItems")
                     saved.insert(photo.id); selected.remove(photo.id); success += 1
                 } catch {
                     if Task.isCancelled { break }
@@ -126,7 +136,16 @@ actor Thumbnails {
         session = URLSession(configuration: config)
         cache.totalCostLimit = 32 * 1024 * 1024
     }
-    func image(_ url: URL) async throws -> UIImage {
+    private func decode(_ file: URL, embeddedOnly: Bool = false) -> UIImage? {
+        guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: !embeddedOnly,
+                kCGImageSourceThumbnailMaxPixelSize: 480,
+                kCGImageSourceCreateThumbnailWithTransform: true
+              ] as CFDictionary) else { return nil }
+        return UIImage(cgImage: cg)
+    }
+    func image(_ url: URL, previewFromOriginal: Bool = false) async throws -> UIImage {
         if let cached = cache.object(forKey: url as NSURL) { return cached }
         if active >= 2 { await withCheckedContinuation { waiters.append($0) } }
         else { active += 1 }
@@ -135,15 +154,29 @@ actor Thumbnails {
             else { waiters.removeFirst().resume() }
         }
         try Task.checkCancellation()
+        if previewFromOriginal {
+            var request = URLRequest(url: url)
+            request.setValue("bytes=0-131071", forHTTPHeaderField: "Range")
+            do {
+                let (partial, response) = try await session.download(for: request)
+                defer { try? FileManager.default.removeItem(at: partial) }
+                if let response = response as? HTTPURLResponse, response.statusCode == 200 || response.statusCode == 206,
+                   let image = decode(partial, embeddedOnly: response.statusCode == 206) {
+                    cache.setObject(image, forKey: url as NSURL, cost: Int(image.size.width * image.size.height * 4))
+                    return image
+                }
+            } catch {
+                try Task.checkCancellation()
+            }
+            try Task.checkCancellation()
+        }
         let (file, response) = try await session.download(from: url)
         defer { try? FileManager.default.removeItem(at: file) }
         guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode),
-              let source = CGImageSourceCreateWithURL(file as CFURL, nil),
-              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 480, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else {
+              let image = decode(file) else {
             throw CameraFailure(message: "Preview unavailable")
         }
-        let image = UIImage(cgImage: cg)
-        cache.setObject(image, forKey: url as NSURL, cost: cg.bytesPerRow * cg.height)
+        cache.setObject(image, forKey: url as NSURL, cost: Int(image.size.width * image.size.height * 4))
         return image
     }
 }
@@ -189,7 +222,7 @@ struct PhotoTile: View {
         .accessibilityLabel("\(photo.title), \(saved ? "saved" : selected ? "selected" : "not selected")")
         .task(id: photo.thumbnail) {
             guard let thumbnail = photo.thumbnail else { return }
-            do { image = try await Thumbnails.shared.image(thumbnail) }
+            do { image = try await Thumbnails.shared.image(thumbnail, previewFromOriginal: !photo.isVideo && thumbnail == photo.original) }
             catch { if !Task.isCancelled { failed = true } }
         }
     }
@@ -257,6 +290,14 @@ struct CameraView: View {
                             Text("\(model.selected.count) selected").font(.subheadline)
                             Spacer()
                             Button("Select all") { model.selected = Set(model.photos.map(\.id)).subtracting(model.saved) }
+                            Menu("Select day") {
+                                ForEach(model.days, id: \.self) { day in
+                                    Button(day) { model.selectDay(day) }
+                                }
+                                if model.photos.contains(where: { $0.day == nil }) {
+                                    Button("Unknown date") { model.selectDay(nil) }
+                                }
+                            }
                             Button("Clear") { model.selected.removeAll() }
                         }.font(.subheadline).disabled(model.busy)
                         Text("Hold an item, then drag to select. Hold near the top or bottom to scroll while selecting.")

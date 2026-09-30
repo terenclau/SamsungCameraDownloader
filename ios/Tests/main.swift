@@ -8,6 +8,8 @@ let didl = """
 <DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
 <container id="folder&amp;1"><dc:title>Photos</dc:title></container>
 <item id="1"><dc:title>A &amp; B.jpg</dc:title><upnp:class>object.item.imageItem.photo</upnp:class>
+<dc:date>2024-08-19T14:25:00</dc:date>
+<res protocolInfo="http-get:*:image/jpeg:DLNA.ORG_PN=JPEG_SM" size="80000">/medium.jpg</res>
 <res protocolInfo="http-get:*:image/jpeg:DLNA.ORG_PN=JPEG_TN" size="20000">/thumb.jpg</res>
 <res protocolInfo="http-get:*:image/jpeg:DLNA.ORG_PN=JPEG_LRG" size="5000000">/original.jpg</res></item>
 <item id="2"><dc:title>Movie.mp4</dc:title><upnp:class>object.item.videoItem</upnp:class><res protocolInfo="http-get:*:image/jpeg:DLNA.ORG_PN=JPEG_LRG">/video-preview.jpg</res></item>
@@ -20,7 +22,11 @@ check(page.photos.count == 1, "Exclude videos and thumbnail-only items")
 check(page.photos[0].title == "A & B.jpg", "Decode escaped titles")
 check(page.photos[0].original.absoluteString == "http://192.168.0.1:7676/original.jpg", "Resolve original URL")
 check(page.photos[0].thumbnail?.lastPathComponent == "thumb.jpg", "Use thumbnail for grid")
+check(page.photos[0].day == "2024-08-19", "Keep camera capture day for selection")
 check(page.photos[0].size == 5000000, "Keep original byte size")
+let otherPort = URL(string: "http://192.168.0.1:52235/services/content")!
+let otherPortPage = try CameraClient.parsePage(Data(soap.utf8), base: otherPort)
+check(otherPortPage.photos[0].savedKey == page.photos[0].savedKey, "Saved marker survives camera port changes")
 check(page.returned == 4 && page.total == 405, "Keep pagination counts including non-photo entries")
 check(page.folders == ["folder&1"], "Decode folder IDs")
 check(CameraClient.escape("folder&<1>") == "folder&amp;&lt;1&gt;", "Escape SOAP IDs")
@@ -44,5 +50,6 @@ check(movies[0].isVideo && movies[0].mimeType == "video/mp4", "Classify video im
 check(movies[0].original.lastPathComponent == "original.mp4", "Reject transcoded resource even when larger")
 check(movies[0].thumbnail?.lastPathComponent == "preview.jpg", "Keep video thumbnail separate from original")
 check(movies[1].thumbnail == nil, "Never download full video for grid preview")
+check(movies[0].day == nil, "Missing dates remain selectable as unknown")
 check(!page.photos[0].isVideo, "Preserve photo classification")
 print("Camera protocol fixture checks passed")

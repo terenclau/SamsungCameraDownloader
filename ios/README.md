@@ -5,7 +5,9 @@ A native SwiftUI photo picker for Samsung Wi-Fi cameras, using the protocol in t
 ## What this version does
 
 - Connect by camera IP, device-description URL, or ContentDirectory service URL.
-- Show a scrollable photo/video grid; tap to select, or touch and hold then drag across a range to select/deselect. Select all and Clear remain available. Hold your finger near the top or bottom of the grid viewport to scroll while extending the selection. Normal swipes scroll without selecting.
+- Show a scrollable photo/video grid; tap to select, or touch and hold then drag across a range to select/deselect. Select all, Select day, and Clear are available. Selecting a day chooses its unsaved items; items without a camera date appear under Unknown date. Hold your finger near the top or bottom of the grid viewport to scroll while extending the selection. Normal swipes scroll without selecting.
+- Show a green badge for items previously imported by this app, including after reconnecting or relaunching.
+- Prefer the camera's smallest advertised thumbnail. For photos without one, try a small HTTP range for an embedded JPEG preview before fetching the original for a downsampled tile.
 - Download selected original photo and MP4 video resources directly from the camera to Apple Photos, preserving the downloaded bytes and embedded metadata without recompression.
 - Show import progress and errors; leave failed/cancelled items selected for retry.
 - Browse multiple pages and nested folders, avoid folder cycles and duplicate file URLs.
@@ -23,7 +25,7 @@ Requires Xcode and an iPhone running iOS 17 or later.
 4. Select your iPhone as the run destination and press **Run** (Command-R).
 5. Keep the camera in **MobileLink**, using the same working configuration as on the Mac. Join its Wi-Fi network on your iPhone if that is how you connected on the Mac; otherwise join the shared router network. Approve the phone on the camera if prompted. If the camera allows only one client, disconnect the Mac from its Wi-Fi before connecting the phone.
 6. Enter the camera's IP address, then tap **Connect to camera**. Allow Local Network access.
-7. Tap the desired photos, then **Download … to Photos**, and allow adding photos. Keep the app open until it finishes.
+7. Tap the desired photos, use **Select day** to choose a camera date, or use **Select all**. Then tap **Download … to Photos** and allow adding photos. Keep the app open until it finishes.
 
 ### If the IP address doesn't work
 
@@ -41,8 +43,9 @@ If permission was denied, enable **Local Network** or **Photos → Add Photos On
 
 - No automatic discovery or remote deletion. Video importing supports MP4 resources; Photos must support the video codec.
 - Download progress counts files, not bytes. Transfers are foreground operations; locking the phone or changing apps may interrupt them. The app prevents automatic screen locking during an import.
-- Saved badges avoid reimporting an item during the current connection only. Reconnecting/relaunching and selecting it again can create a duplicate in Photos.
-- The grid uses camera thumbnails when available. If a photo has no thumbnail, its original is downloaded for a downsampled preview; browsing can therefore use significant Wi-Fi traffic. Only two preview requests run at once and the decoded cache is bounded.
+- Saved badges are based on successful imports recorded by this app. They persist across launches for the same camera host, file path, name, size, and media type. They cannot detect imports made outside this app or items later deleted from Photos; a camera address change may also prevent a match.
+- Day selection uses dates supplied by the camera's file listing. Files without a date appear under Unknown date; the app does not download originals just to discover their capture dates.
+- The grid uses the smallest camera thumbnail when available. If a photo has none, the app asks for the first 128 KiB to try an embedded JPEG thumbnail, then downloads the original for a downsampled preview if needed. Cameras that ignore range requests may still send the full file. Only two preview requests run at once and the decoded cache is bounded.
 - Entries advertising only thumbnails are excluded rather than saving a thumbnail as an original. Video entries without an MP4 resource are excluded. Videos without an image preview show an MP4 placeholder; the grid does not download entire movies. Resources explicitly marked as transcoded by the camera are excluded.
 - Original bytes and filenames are passed to Photos without recompression or metadata rewriting. This preserves embedded EXIF/GPS/capture timestamps and MP4 metadata present in the served file; it cannot recover metadata removed by the camera or preserve SD-card filesystem timestamps. Photos controls how metadata is displayed. Actual resource quality depends on what the camera exposes; compare an exported unmodified original with the SD-card file.
 - No background-transfer guarantee, app icon artwork, or App Store distribution setup in this initial development version.

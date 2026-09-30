@@ -8,6 +8,8 @@ struct CameraPhoto: Identifiable, Hashable {
     let size: Int64
     let isVideo: Bool
     let mimeType: String
+    let day: String?
+    let savedKey: String
 }
 
 struct CameraFailure: LocalizedError {
@@ -138,9 +140,23 @@ struct CameraClient {
             }
             guard let best = originals.max(by: { (Int64($0.attributes["size"] ?? "") ?? 0) < (Int64($1.attributes["size"] ?? "") ?? 0) }),
                   let original = httpURL(best.text, relativeTo: base) else { continue }
-            let preview = (images.first(where: isThumb) ?? (isVideo ? images.first : nil)).flatMap { httpURL($0.text, relativeTo: base) } ?? (isVideo ? nil : original)
+            let thumbnails = images.filter(isThumb)
+            let smallest = thumbnails.min {
+                let firstTiny = ($0.attributes["protocolInfo"] ?? "").contains("_TN")
+                let secondTiny = ($1.attributes["protocolInfo"] ?? "").contains("_TN")
+                if firstTiny != secondTiny { return firstTiny }
+                let firstSize = Int64($0.attributes["size"] ?? "") ?? Int64.max
+                let secondSize = Int64($1.attributes["size"] ?? "") ?? Int64.max
+                return firstSize < secondSize
+            }
+            let preview = (smallest ?? (isVideo ? images.first : nil)).flatMap { httpURL($0.text, relativeTo: base) } ?? (isVideo ? nil : original)
             let mime = (best.attributes["protocolInfo"] ?? "").components(separatedBy: ":")[2]
-            photos.append(CameraPhoto(id: original.absoluteString, title: item.value("title").isEmpty ? original.lastPathComponent : item.value("title"), original: original, thumbnail: preview, size: Int64(best.attributes["size"] ?? "") ?? 0, isVideo: isVideo, mimeType: mime))
+            let title = item.value("title").isEmpty ? original.lastPathComponent : item.value("title")
+            let size = Int64(best.attributes["size"] ?? "") ?? 0
+            let datePrefix = String(item.value("date").prefix(10))
+            let day = datePrefix.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil ? datePrefix : nil
+            let savedKey = "\(original.host ?? "")|\(original.path)|\(title)|\(size)|\(mime)"
+            photos.append(CameraPhoto(id: original.absoluteString, title: title, original: original, thumbnail: preview, size: size, isVideo: isVideo, mimeType: mime, day: day, savedKey: savedKey))
         }
         return BrowsePage(photos: photos, folders: didl.children.filter { $0.name == "container" }.compactMap { $0.attributes["id"] }, returned: Int(envelope.descendants("NumberReturned").first?.text ?? "") ?? didl.children.count, total: Int(envelope.descendants("TotalMatches").first?.text ?? ""), signature: result.text)
     }
